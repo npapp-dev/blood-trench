@@ -1,0 +1,17 @@
+:root {
+  font-family: 'Courier New', Courier, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: radial-gradient(circle at center, #1a0809 0%, #050102 70%);
+  overflow: hidden;
+}
