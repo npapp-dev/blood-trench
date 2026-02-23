@@ -2,6 +2,11 @@
 
 Browser horror-submersible game inspired by the tension loop of Iron Lung: blind navigation by instruments, coordinate-driven objectives, constrained information, photo collection, and escalating survival pressure.
 
+Around 80-90% vibe coded with Codex 5.3. 
+
+<img width="1282" height="730" alt="image" src="https://github.com/user-attachments/assets/5bde8779-443b-40d9-8c34-de96b9cea4b0" />
+
+
 ## Stack
 
 - TypeScript
