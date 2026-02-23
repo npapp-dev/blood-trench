@@ -170,10 +170,6 @@ export class MainScene extends Phaser.Scene {
       restart: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     };
 
-    keyboard.on('keydown-R', this.onRestartKeyDown);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      keyboard.off('keydown-R', this.onRestartKeyDown);
-    });
   }
 
   public update(_time: number, deltaMs: number): void {
@@ -478,10 +474,6 @@ export class MainScene extends Phaser.Scene {
     this.applySharpen(sourceCtx, sourceWidth, sourceHeight, 0.72);
     this.addLensVignette(sourceCtx, sourceWidth, sourceHeight, template.danger);
     this.addDeterministicStatic(sourceCtx, sourceWidth, sourceHeight, random, template.danger * 0.35);
-    if (template.isDanger) {
-      this.drawDangerOverlay(sourceCtx, sourceWidth, sourceHeight, random);
-    }
-
     ctx.clearRect(0, 0, width, height);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -1128,27 +1120,6 @@ export class MainScene extends Phaser.Scene {
       const alpha = 0.03 + random() * 0.06;
       ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
       ctx.fillRect(0, y, width, h);
-    }
-  }
-
-  private drawDangerOverlay(ctx: CanvasRenderingContext2D, width: number, height: number, random: () => number): void {
-    const cx = width * 0.5;
-    const cy = height * 0.52;
-    ctx.strokeStyle = 'rgba(255, 110, 110, 0.42)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 56, 0, Math.PI * 2);
-    ctx.stroke();
-    for (let i = 0; i < 6; i += 1) {
-      const angle = (Math.PI * 2 * i) / 6 + random() * 0.08;
-      const x1 = cx + Math.cos(angle) * 66;
-      const y1 = cy + Math.sin(angle) * 66;
-      const x2 = cx + Math.cos(angle) * 104;
-      const y2 = cy + Math.sin(angle) * 104;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
     }
   }
 
