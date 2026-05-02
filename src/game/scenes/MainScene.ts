@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_TITLE, PHOTO_DISTANCE, START_POSITION, WORLD_HEIGHT, WORLD_WIDTH } from '../constants';
+import { GAME_TITLE, PHOTO_DISTANCE, START_POSITION } from '../constants';
 import { allObjectivesComplete, applyCollisionDamage, computePressure, detectCollision, drainResources, stepSubmarine } from '../logic';
+import { MapRenderer } from '../render/MapRenderer';
 import { PhotoLibrary } from '../render/PhotoLibrary';
 import { hashString, seededRandom } from '../render/random';
 import type { ControlInput, Hazard, Objective, SubmarineState, Vec2 } from '../types';
@@ -31,7 +32,6 @@ export class MainScene extends Phaser.Scene {
     pressure: computePressure(START_POSITION.y),
   };
 
-  private readonly mapRect = new Phaser.Geom.Rectangle(28, 66, 810, 628);
   private readonly cameraRect = new Phaser.Geom.Rectangle(864, 120, 388, 388);
   private objectives: Objective[] = [];
   private hazards: Hazard[] = [];
@@ -48,7 +48,7 @@ export class MainScene extends Phaser.Scene {
   private creatureRoarCooldownMs = 0;
   private collisionInvulnMs = 0;
 
-  private mapGraphics!: Phaser.GameObjects.Graphics;
+  private mapRenderer!: MapRenderer;
   private uiGraphics!: Phaser.GameObjects.Graphics;
   private camGraphics!: Phaser.GameObjects.Graphics;
   private camOverlayGraphics!: Phaser.GameObjects.Graphics;
@@ -61,7 +61,6 @@ export class MainScene extends Phaser.Scene {
   private targetStatusText!: Phaser.GameObjects.Text;
   private overlayText!: Phaser.GameObjects.Text;
   private photoLibrary!: PhotoLibrary;
-  private mapSpeckle: Array<{ x: number; y: number }> = [];
 
   private keys!: {
     forward: Phaser.Input.Keyboard.Key;
@@ -87,14 +86,13 @@ export class MainScene extends Phaser.Scene {
     this.add.rectangle(640, 360, 1280, 720, 0x120406, 1);
     this.add.rectangle(640, 360, 1280, 720, 0x2b0a0f, 0.13);
 
-    this.mapGraphics = this.add.graphics();
+    this.mapRenderer = new MapRenderer(this);
     this.uiGraphics = this.add.graphics();
     this.camGraphics = this.add.graphics();
     this.camOverlayGraphics = this.add.graphics();
 
     this.photoLibrary = new PhotoLibrary(this);
     this.photoLibrary.build(this.objectives, this.hazards);
-    this.buildMapSpeckle();
     this.photoSprite = this.add
       .image(this.cameraRect.centerX, this.cameraRect.centerY, 'photo-unknown')
       .setDisplaySize(this.cameraRect.width - 24, this.cameraRect.height - 24)
@@ -167,7 +165,7 @@ export class MainScene extends Phaser.Scene {
         this.scene.restart();
       }
       this.renderUI();
-      this.renderMap();
+      this.mapRenderer.render(this.state, this.objectives, this.hazards, this.discovered);
       this.renderCamera();
       return;
     }
@@ -194,7 +192,7 @@ export class MainScene extends Phaser.Scene {
 
     this.checkEndStates();
     this.renderUI();
-    this.renderMap();
+    this.mapRenderer.render(this.state, this.objectives, this.hazards, this.discovered);
     this.renderCamera();
   }
 
@@ -207,7 +205,7 @@ export class MainScene extends Phaser.Scene {
   private renderUI(): void {
     this.uiGraphics.clear();
     this.uiGraphics.lineStyle(2, 0x7c3035, 1);
-    this.uiGraphics.strokeRectShape(this.mapRect);
+    this.uiGraphics.strokeRectShape(this.mapRenderer.rect);
     this.uiGraphics.strokeRectShape(this.cameraRect);
     this.uiGraphics.lineStyle(1, 0x4f1f23, 1);
     this.uiGraphics.strokeRect(860, 516, 394, 176);
@@ -234,42 +232,6 @@ export class MainScene extends Phaser.Scene {
     );
     this.logText.setText(this.logs.join('\n'));
     this.foundText.setText(['FOUND OBJECT RECORD', ...(recordLines.length > 0 ? recordLines : ['- NONE'])].join('\n'));
-  }
-
-  private renderMap(): void {
-    this.mapGraphics.clear();
-    this.mapGraphics.fillStyle(0x070203, 1);
-    this.mapGraphics.fillRectShape(this.mapRect);
-
-    this.mapGraphics.fillStyle(0x420d12, 0.18);
-    for (const dot of this.mapSpeckle) {
-      this.mapGraphics.fillRect(dot.x, dot.y, 2, 2);
-    }
-
-    for (const objective of this.objectives) {
-      const mapped = this.toMap(objective.position);
-      const color = objective.completed ? 0x5bc27b : 0xc95a62;
-      this.mapGraphics.lineStyle(1, color, 0.9);
-      this.mapGraphics.strokeCircle(mapped.x, mapped.y, objective.completed ? 7 : 10);
-    }
-
-    for (const hazard of this.hazards) {
-      if (!this.discovered.has(hazard.id)) {
-        continue;
-      }
-      const mapped = this.toMap(hazard.position);
-      const color = hazard.kind === 'flesh' ? 0xc74466 : 0x99414f;
-      this.mapGraphics.fillStyle(color, 0.42);
-      this.mapGraphics.fillCircle(mapped.x, mapped.y, 4 + hazard.radius * 0.02);
-    }
-
-    const submarine = this.toMap(this.state.position);
-    this.mapGraphics.save();
-    this.mapGraphics.translateCanvas(submarine.x, submarine.y);
-    this.mapGraphics.rotateCanvas(this.state.heading);
-    this.mapGraphics.fillStyle(0xf8efef, 1);
-    this.mapGraphics.fillTriangle(12, 0, -8, 6, -8, -6);
-    this.mapGraphics.restore();
   }
 
   private renderCamera(): void {
@@ -330,18 +292,6 @@ export class MainScene extends Phaser.Scene {
       this.camOverlayGraphics.fillStyle(0xffffff, (photoVisible ? 0.018 : 0.05) + random() * 0.06);
       this.camOverlayGraphics.fillRect(x, y, 1, 1);
     }
-  }
-
-  private buildMapSpeckle(): void {
-    const random = seededRandom(0xdec0de);
-    const dots: Array<{ x: number; y: number }> = [];
-    for (let index = 0; index < 90; index += 1) {
-      dots.push({
-        x: this.mapRect.x + random() * this.mapRect.width,
-        y: this.mapRect.y + random() * this.mapRect.height,
-      });
-    }
-    this.mapSpeckle = dots;
   }
 
   private resolveCaptureTarget(): CaptureTarget | null {
@@ -413,13 +363,6 @@ export class MainScene extends Phaser.Scene {
     }
     objective.completed = true;
     return true;
-  }
-
-  private toMap(point: Vec2): Vec2 {
-    return {
-      x: this.mapRect.x + (point.x / WORLD_WIDTH) * this.mapRect.width,
-      y: this.mapRect.y + (point.y / WORLD_HEIGHT) * this.mapRect.height,
-    };
   }
 
   private handleCollisions(): void {
