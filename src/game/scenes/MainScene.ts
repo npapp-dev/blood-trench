@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
-import { GAME_TITLE, PHOTO_DISTANCE, START_POSITION } from '../constants';
+import { PHOTO_DISTANCE, START_POSITION } from '../constants';
 import { allObjectivesComplete, applyCollisionDamage, computePressure, detectCollision, drainResources, stepSubmarine } from '../logic';
 import { CameraView } from '../render/CameraView';
 import type { PhotoData } from '../render/CameraView';
+import { Hud } from '../render/Hud';
 import { MapRenderer } from '../render/MapRenderer';
 import { PhotoLibrary } from '../render/PhotoLibrary';
 import type { ControlInput, Hazard, Objective, SubmarineState, Vec2 } from '../types';
@@ -28,9 +29,6 @@ export class MainScene extends Phaser.Scene {
   private objectives: Objective[] = [];
   private hazards: Hazard[] = [];
   private discovered = new Set<string>();
-  private logs: string[] = [];
-  private foundElements = new Set<string>();
-  private foundCatalog: string[] = [];
   private photoData: PhotoData | null = null;
   private gameOverMessage = '';
 
@@ -42,12 +40,7 @@ export class MainScene extends Phaser.Scene {
 
   private mapRenderer!: MapRenderer;
   private cameraView!: CameraView;
-  private uiGraphics!: Phaser.GameObjects.Graphics;
-  private statusText!: Phaser.GameObjects.Text;
-  private missionText!: Phaser.GameObjects.Text;
-  private logText!: Phaser.GameObjects.Text;
-  private foundText!: Phaser.GameObjects.Text;
-  private overlayText!: Phaser.GameObjects.Text;
+  private hud!: Hud;
   private photoLibrary!: PhotoLibrary;
 
   private keys!: {
@@ -68,49 +61,18 @@ export class MainScene extends Phaser.Scene {
     const mission = createMission(1337);
     this.objectives = mission.objectives;
     this.hazards = mission.hazards;
-    this.addLog('Mission started. Reach coordinates and collect camera evidence.');
-    this.addLog('Controls: WASD steer | SPACE sonar | P photo | R restart');
 
     this.add.rectangle(640, 360, 1280, 720, 0x120406, 1);
     this.add.rectangle(640, 360, 1280, 720, 0x2b0a0f, 0.13);
 
     this.mapRenderer = new MapRenderer(this);
-    this.uiGraphics = this.add.graphics();
-
     this.photoLibrary = new PhotoLibrary(this);
     this.photoLibrary.build(this.objectives, this.hazards);
     this.cameraView = new CameraView(this);
+    this.hud = new Hud(this, this.mapRenderer.rect, this.cameraView.rect);
 
-    this.statusText = this.add.text(40, 18, '', {
-      fontFamily: 'Courier New',
-      fontSize: '18px',
-      color: '#f6d5d5',
-    });
-    this.missionText = this.add.text(866, 522, '', {
-      fontFamily: 'Courier New',
-      fontSize: '16px',
-      color: '#f8b0b0',
-      lineSpacing: 6,
-    });
-    this.logText = this.add.text(866, 620, '', {
-      fontFamily: 'Courier New',
-      fontSize: '13px',
-      color: '#ffd6d6',
-      lineSpacing: 3,
-    });
-    this.foundText = this.add.text(40, 614, '', {
-      fontFamily: 'Courier New',
-      fontSize: '13px',
-      color: '#f2dede',
-      lineSpacing: 3,
-    });
-    this.overlayText = this.add.text(640, 360, '', {
-      fontFamily: 'Courier New',
-      fontSize: '24px',
-      color: '#ffe7e7',
-      align: 'center',
-    });
-    this.overlayText.setOrigin(0.5);
+    this.hud.addLog('Mission started. Reach coordinates and collect camera evidence.');
+    this.hud.addLog('Controls: WASD steer | SPACE sonar | P photo | R restart');
 
     const keyboard = this.input.keyboard;
     if (!keyboard) {
@@ -133,42 +95,38 @@ export class MainScene extends Phaser.Scene {
     const dtSec = Math.min(deltaMs / 1000, 0.05);
 
     if (this.gameOverMessage) {
-      this.overlayText.setText(`${this.gameOverMessage}\n\nPress R to restart`);
       if (Phaser.Input.Keyboard.JustDown(this.keys.restart)) {
         this.scene.restart();
       }
-      this.renderUI();
-      this.mapRenderer.render(this.state, this.objectives, this.hazards, this.discovered);
-      this.cameraView.render({
-        photoDevelopMs: this.photoDevelopMs,
-        photoData: this.photoData,
-        targetInFrame: this.resolveCaptureTarget() !== null,
-      });
-      return;
-    }
-
-    this.overlayText.setText('');
-
-    this.photoCooldownMs = Math.max(0, this.photoCooldownMs - deltaMs);
-    this.sonarCooldownMs = Math.max(0, this.sonarCooldownMs - deltaMs);
-    this.creatureRoarCooldownMs = Math.max(0, this.creatureRoarCooldownMs - deltaMs);
-    this.collisionInvulnMs = Math.max(0, this.collisionInvulnMs - deltaMs);
-
-    if (this.photoDevelopMs > 0) {
-      this.photoDevelopMs = Math.max(0, this.photoDevelopMs - deltaMs);
-      if (this.photoDevelopMs === 0) {
-        this.finishPhotoCapture();
-      }
     } else {
-      this.state = stepSubmarine(this.state, this.readInput(), dtSec);
-      this.state = drainResources(this.state, dtSec);
-      this.handleCollisions();
-      this.trySonarPing();
-      this.tryPhotoCapture();
+      this.photoCooldownMs = Math.max(0, this.photoCooldownMs - deltaMs);
+      this.sonarCooldownMs = Math.max(0, this.sonarCooldownMs - deltaMs);
+      this.creatureRoarCooldownMs = Math.max(0, this.creatureRoarCooldownMs - deltaMs);
+      this.collisionInvulnMs = Math.max(0, this.collisionInvulnMs - deltaMs);
+
+      if (this.photoDevelopMs > 0) {
+        this.photoDevelopMs = Math.max(0, this.photoDevelopMs - deltaMs);
+        if (this.photoDevelopMs === 0) {
+          this.finishPhotoCapture();
+        }
+      } else {
+        this.state = stepSubmarine(this.state, this.readInput(), dtSec);
+        this.state = drainResources(this.state, dtSec);
+        this.handleCollisions();
+        this.trySonarPing();
+        this.tryPhotoCapture();
+      }
+
+      this.checkEndStates();
     }
 
-    this.checkEndStates();
-    this.renderUI();
+    this.hud.render({
+      state: this.state,
+      objectives: this.objectives,
+      photoCooldownMs: this.photoCooldownMs,
+      sonarCooldownMs: this.sonarCooldownMs,
+      gameOverMessage: this.gameOverMessage,
+    });
     this.mapRenderer.render(this.state, this.objectives, this.hazards, this.discovered);
     this.cameraView.render({
       photoDevelopMs: this.photoDevelopMs,
@@ -181,38 +139,6 @@ export class MainScene extends Phaser.Scene {
     const thrust = (this.keys.forward.isDown ? 1 : 0) + (this.keys.backward.isDown ? -1 : 0);
     const turn = (this.keys.right.isDown ? 1 : 0) + (this.keys.left.isDown ? -1 : 0);
     return { thrust, turn };
-  }
-
-  private renderUI(): void {
-    this.uiGraphics.clear();
-    this.uiGraphics.lineStyle(2, 0x7c3035, 1);
-    this.uiGraphics.strokeRectShape(this.mapRenderer.rect);
-    this.uiGraphics.strokeRectShape(this.cameraView.rect);
-    this.uiGraphics.lineStyle(1, 0x4f1f23, 1);
-    this.uiGraphics.strokeRect(860, 516, 394, 176);
-    this.uiGraphics.strokeRect(28, 604, 810, 88);
-
-    const objectiveLines = this.objectives.map((objective) => `${objective.completed ? 'X' : '>'} ${objective.id} ${objective.label}`);
-    const recordLines = this.foundCatalog.slice(0, 8).map((entry) => `- ${entry}`);
-    const headingDeg = Phaser.Math.RadToDeg(this.state.heading);
-
-    this.statusText.setText(
-      `${GAME_TITLE}\nX ${this.state.position.x.toFixed(0)} | Y ${this.state.position.y.toFixed(0)} | HDG ${headingDeg.toFixed(0)}`,
-    );
-    this.missionText.setText(
-      [
-        `OXYGEN ${this.state.oxygen.toFixed(1)}%`,
-        `HULL   ${this.state.hull.toFixed(1)}%`,
-        `PRESS  ${this.state.pressure.toFixed(1)} bar`,
-        `PHOTO  ${Math.ceil(this.photoCooldownMs / 1000)}s`,
-        `SONAR  ${Math.ceil(this.sonarCooldownMs / 1000)}s`,
-        `FOUND  ${this.foundElements.size}`,
-        '',
-        ...objectiveLines,
-      ].join('\n'),
-    );
-    this.logText.setText(this.logs.join('\n'));
-    this.foundText.setText(['FOUND OBJECT RECORD', ...(recordLines.length > 0 ? recordLines : ['- NONE'])].join('\n'));
   }
 
   private resolveCaptureTarget(): CaptureTarget | null {
@@ -297,10 +223,10 @@ export class MainScene extends Phaser.Scene {
 
     this.state = applyCollisionDamage(this.state, collision.id.startsWith('MN-'));
     this.collisionInvulnMs = 500;
-    this.addLog(`Collision with ${collision.kind === 'flesh' ? 'unknown biomass' : 'rock outcrop'}.`);
+    this.hud.addLog(`Collision with ${collision.kind === 'flesh' ? 'unknown biomass' : 'rock outcrop'}.`);
     if (collision.id.startsWith('MN-') && this.creatureRoarCooldownMs === 0) {
       this.creatureRoarCooldownMs = 9000;
-      this.addLog('Bio-acoustic impact detected. Large organism nearby.');
+      this.hud.addLog('Bio-acoustic impact detected. Large organism nearby.');
       this.cameras.main.shake(300, 0.005);
     }
   }
@@ -320,7 +246,7 @@ export class MainScene extends Phaser.Scene {
       }
     }
     this.sonarCooldownMs = 5000;
-    this.addLog(`Sonar pulse emitted. ${found} contacts mapped.`);
+    this.hud.addLog(`Sonar pulse emitted. ${found} contacts mapped.`);
   }
 
   private tryPhotoCapture(): void {
@@ -329,7 +255,7 @@ export class MainScene extends Phaser.Scene {
     }
     this.photoDevelopMs = 1600;
     this.photoData = null;
-    this.addLog('Camera trigger pulled. Developing image...');
+    this.hud.addLog('Camera trigger pulled. Developing image...');
   }
 
   private finishPhotoCapture(): void {
@@ -343,7 +269,7 @@ export class MainScene extends Phaser.Scene {
     const baseElementId = target?.baseElementId ?? 'unknown';
     const template = this.photoLibrary.get(elementId);
     const objectiveCompleted = target?.objectiveId ? this.markObjectiveComplete(target.objectiveId) : false;
-    const newlyCataloged = this.trackFoundElement(baseElementId, template?.label ?? 'OFF-TARGET');
+    const newlyCataloged = this.hud.trackFoundElement(baseElementId, template?.label ?? 'OFF-TARGET');
 
     this.photoData = {
       elementId,
@@ -355,11 +281,11 @@ export class MainScene extends Phaser.Scene {
     this.photoCooldownMs = 3500;
 
     if (objectiveCompleted && target?.objectiveId) {
-      this.addLog(`Objective ${target.objectiveId} documented.`);
+      this.hud.addLog(`Objective ${target.objectiveId} documented.`);
     } else if (target) {
-      this.addLog(newlyCataloged ? `New contact logged: ${this.photoData.label}.` : `Known contact: ${this.photoData.label}.`);
+      this.hud.addLog(newlyCataloged ? `New contact logged: ${this.photoData.label}.` : `Known contact: ${this.photoData.label}.`);
     } else {
-      this.addLog('No valid target in camera cone. Image is noise.');
+      this.hud.addLog('No valid target in camera cone. Image is noise.');
     }
   }
 
@@ -374,25 +300,8 @@ export class MainScene extends Phaser.Scene {
     }
     if (allObjectivesComplete(this.objectives)) {
       this.gameOverMessage = 'MISSION COMPLETE // TRANSMISSION SENT';
-      this.addLog('All objectives documented.');
+      this.hud.addLog('All objectives documented.');
     }
   }
 
-  private addLog(line: string): void {
-    this.logs.unshift(`> ${line}`);
-    this.logs = this.logs.slice(0, 5);
-  }
-
-  private trackFoundElement(baseElementId: string, label: string): boolean {
-    if (!baseElementId.startsWith('objective:') && !baseElementId.startsWith('hazard:')) {
-      return false;
-    }
-    if (this.foundElements.has(baseElementId)) {
-      return false;
-    }
-    this.foundElements.add(baseElementId);
-    this.foundCatalog.unshift(label);
-    this.foundCatalog = this.foundCatalog.slice(0, 12);
-    return true;
-  }
 }
