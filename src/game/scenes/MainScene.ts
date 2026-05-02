@@ -94,6 +94,28 @@ export class MainScene extends Phaser.Scene {
   }
 
   public create(): void {
+    // Phaser scene.restart() reuses the same instance, so class field initializers do
+    // not re-run. Reset every piece of mutable state here so a restart starts clean.
+    this.state = {
+      position: { ...START_POSITION },
+      heading: 0.4,
+      speed: 0,
+      hull: 100,
+      oxygen: 100,
+      pressure: 0,
+    };
+    this.discovered = new Set();
+    this.logs = [];
+    this.foundElements = new Set();
+    this.foundCatalog = [];
+    this.photoData = null;
+    this.gameOverMessage = '';
+    this.photoDevelopMs = 0;
+    this.photoCooldownMs = 0;
+    this.sonarCooldownMs = 0;
+    this.creatureRoarCooldownMs = 0;
+    this.photoTemplates.clear();
+
     const mission = createMission(1337);
     this.objectives = mission.objectives;
     this.hazards = mission.hazards;
@@ -179,6 +201,7 @@ export class MainScene extends Phaser.Scene {
       this.overlayText.setText(`${this.gameOverMessage}\n\nPress R to restart`);
       if (Phaser.Input.Keyboard.JustDown(this.keys.restart)) {
         this.scene.restart();
+        return;
       }
       this.renderUI();
       this.renderMap();
