@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { START_POSITION, WORLD_HEIGHT } from './constants';
+import { HULL_COLLISION_DAMAGE, START_POSITION, WORLD_HEIGHT } from './constants';
 import { allObjectivesComplete, applyCollisionDamage, completeNearbyObjective, computePressure, drainResources, stepSubmarine } from './logic';
 import type { Objective, SubmarineState } from './types';
 
@@ -69,9 +69,18 @@ describe('objective completion', () => {
 });
 
 describe('collision damage', () => {
-  it('monster deals more damage than regular collision', () => {
-    const regular = applyCollisionDamage(baseState(), false);
-    const monster = applyCollisionDamage(baseState(), true);
-    expect(monster.hull).toBeLessThan(regular.hull);
+  it('regular hazard deducts HULL_COLLISION_DAMAGE', () => {
+    const result = applyCollisionDamage(baseState(), false);
+    expect(result.hull).toBeCloseTo(100 - HULL_COLLISION_DAMAGE, 5);
+  });
+
+  it('monster deducts 1.8x HULL_COLLISION_DAMAGE', () => {
+    const result = applyCollisionDamage(baseState(), true);
+    expect(result.hull).toBeCloseTo(100 - HULL_COLLISION_DAMAGE * 1.8, 5);
+  });
+
+  it('reverses speed by -0.35', () => {
+    const result = applyCollisionDamage(baseState({ speed: 100 }), false);
+    expect(result.speed).toBeCloseTo(-35, 5);
   });
 });
