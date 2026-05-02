@@ -1,19 +1,12 @@
 import Phaser from 'phaser';
 import { GAME_TITLE, PHOTO_DISTANCE, START_POSITION } from '../constants';
 import { allObjectivesComplete, applyCollisionDamage, computePressure, detectCollision, drainResources, stepSubmarine } from '../logic';
+import { CameraView } from '../render/CameraView';
+import type { PhotoData } from '../render/CameraView';
 import { MapRenderer } from '../render/MapRenderer';
 import { PhotoLibrary } from '../render/PhotoLibrary';
-import { hashString, seededRandom } from '../render/random';
 import type { ControlInput, Hazard, Objective, SubmarineState, Vec2 } from '../types';
 import { createMission } from '../world';
-
-interface PhotoData {
-  label: string;
-  signatures: string[];
-  danger: number;
-  elementId: string;
-  textureKey: string;
-}
 
 interface CaptureTarget {
   baseElementId: string;
@@ -32,7 +25,6 @@ export class MainScene extends Phaser.Scene {
     pressure: computePressure(START_POSITION.y),
   };
 
-  private readonly cameraRect = new Phaser.Geom.Rectangle(864, 120, 388, 388);
   private objectives: Objective[] = [];
   private hazards: Hazard[] = [];
   private discovered = new Set<string>();
@@ -49,16 +41,12 @@ export class MainScene extends Phaser.Scene {
   private collisionInvulnMs = 0;
 
   private mapRenderer!: MapRenderer;
+  private cameraView!: CameraView;
   private uiGraphics!: Phaser.GameObjects.Graphics;
-  private camGraphics!: Phaser.GameObjects.Graphics;
-  private camOverlayGraphics!: Phaser.GameObjects.Graphics;
-  private photoSprite!: Phaser.GameObjects.Image;
   private statusText!: Phaser.GameObjects.Text;
   private missionText!: Phaser.GameObjects.Text;
   private logText!: Phaser.GameObjects.Text;
   private foundText!: Phaser.GameObjects.Text;
-  private cameraText!: Phaser.GameObjects.Text;
-  private targetStatusText!: Phaser.GameObjects.Text;
   private overlayText!: Phaser.GameObjects.Text;
   private photoLibrary!: PhotoLibrary;
 
@@ -88,15 +76,10 @@ export class MainScene extends Phaser.Scene {
 
     this.mapRenderer = new MapRenderer(this);
     this.uiGraphics = this.add.graphics();
-    this.camGraphics = this.add.graphics();
-    this.camOverlayGraphics = this.add.graphics();
 
     this.photoLibrary = new PhotoLibrary(this);
     this.photoLibrary.build(this.objectives, this.hazards);
-    this.photoSprite = this.add
-      .image(this.cameraRect.centerX, this.cameraRect.centerY, 'photo-unknown')
-      .setDisplaySize(this.cameraRect.width - 24, this.cameraRect.height - 24)
-      .setVisible(false);
+    this.cameraView = new CameraView(this);
 
     this.statusText = this.add.text(40, 18, '', {
       fontFamily: 'Courier New',
@@ -120,16 +103,6 @@ export class MainScene extends Phaser.Scene {
       fontSize: '13px',
       color: '#f2dede',
       lineSpacing: 3,
-    });
-    this.cameraText = this.add.text(866, 76, 'EXTERNAL CAMERA // MONOCHROME', {
-      fontFamily: 'Courier New',
-      fontSize: '16px',
-      color: '#e9b8b8',
-    });
-    this.targetStatusText = this.add.text(866, 98, 'NO TARGET', {
-      fontFamily: 'Courier New',
-      fontSize: '14px',
-      color: '#ff9ca8',
     });
     this.overlayText = this.add.text(640, 360, '', {
       fontFamily: 'Courier New',
@@ -166,7 +139,11 @@ export class MainScene extends Phaser.Scene {
       }
       this.renderUI();
       this.mapRenderer.render(this.state, this.objectives, this.hazards, this.discovered);
-      this.renderCamera();
+      this.cameraView.render({
+        photoDevelopMs: this.photoDevelopMs,
+        photoData: this.photoData,
+        targetInFrame: this.resolveCaptureTarget() !== null,
+      });
       return;
     }
 
@@ -193,7 +170,11 @@ export class MainScene extends Phaser.Scene {
     this.checkEndStates();
     this.renderUI();
     this.mapRenderer.render(this.state, this.objectives, this.hazards, this.discovered);
-    this.renderCamera();
+    this.cameraView.render({
+      photoDevelopMs: this.photoDevelopMs,
+      photoData: this.photoData,
+      targetInFrame: this.resolveCaptureTarget() !== null,
+    });
   }
 
   private readInput(): ControlInput {
@@ -206,7 +187,7 @@ export class MainScene extends Phaser.Scene {
     this.uiGraphics.clear();
     this.uiGraphics.lineStyle(2, 0x7c3035, 1);
     this.uiGraphics.strokeRectShape(this.mapRenderer.rect);
-    this.uiGraphics.strokeRectShape(this.cameraRect);
+    this.uiGraphics.strokeRectShape(this.cameraView.rect);
     this.uiGraphics.lineStyle(1, 0x4f1f23, 1);
     this.uiGraphics.strokeRect(860, 516, 394, 176);
     this.uiGraphics.strokeRect(28, 604, 810, 88);
@@ -232,66 +213,6 @@ export class MainScene extends Phaser.Scene {
     );
     this.logText.setText(this.logs.join('\n'));
     this.foundText.setText(['FOUND OBJECT RECORD', ...(recordLines.length > 0 ? recordLines : ['- NONE'])].join('\n'));
-  }
-
-  private renderCamera(): void {
-    const liveTarget = this.resolveCaptureTarget();
-    if (liveTarget) {
-      this.targetStatusText.setText('TARGET IN FRAME').setColor('#9fe9b6');
-    } else {
-      this.targetStatusText.setText('NO TARGET').setColor('#ff9ca8');
-    }
-
-    this.camGraphics.clear();
-    this.camOverlayGraphics.clear();
-    this.camGraphics.fillStyle(0x060202, 1);
-    this.camGraphics.fillRectShape(this.cameraRect);
-
-    if (this.photoDevelopMs > 0) {
-      const remaining = Math.ceil(this.photoDevelopMs / 1000);
-      this.cameraText.setText(`DEVELOPING IMAGE // ${remaining}s`);
-      this.photoSprite.setVisible(false);
-      this.drawCameraOverlay();
-      return;
-    }
-
-    this.cameraText.setText('EXTERNAL CAMERA // MONOCHROME');
-    if (!this.photoData) {
-      this.photoSprite.setVisible(false);
-      this.drawCameraOverlay();
-      return;
-    }
-
-    this.photoSprite.setTexture(this.photoData.textureKey).setVisible(true);
-    this.drawCameraOverlay(hashString(this.photoData.elementId), true);
-    this.cameraText.setText(`PHOTO: ${this.photoData.label} // danger ${this.photoData.danger.toFixed(2)}`);
-  }
-
-  private drawCameraOverlay(seed?: number, photoVisible = false): void {
-    const random = seed === undefined ? Math.random : seededRandom(seed);
-    this.camOverlayGraphics.lineStyle(1, 0xeb9ead, 0.8);
-    this.camOverlayGraphics.strokeRect(this.cameraRect.x + 18, this.cameraRect.y + 18, this.cameraRect.width - 36, this.cameraRect.height - 36);
-    this.camOverlayGraphics.lineStyle(1, 0xe4a8b4, 0.28);
-    this.camOverlayGraphics.strokeLineShape(
-      new Phaser.Geom.Line(this.cameraRect.centerX - 20, this.cameraRect.centerY, this.cameraRect.centerX + 20, this.cameraRect.centerY),
-    );
-    this.camOverlayGraphics.strokeLineShape(
-      new Phaser.Geom.Line(this.cameraRect.centerX, this.cameraRect.centerY - 20, this.cameraRect.centerX, this.cameraRect.centerY + 20),
-    );
-
-    const scanlineStep = photoVisible ? 5 : 3;
-    const scanlineAlpha = photoVisible ? 0.006 : 0.012;
-    for (let y = this.cameraRect.y + 20; y < this.cameraRect.bottom - 20; y += scanlineStep) {
-      this.camOverlayGraphics.fillStyle(0xffe5ea, scanlineAlpha + random() * 0.01);
-      this.camOverlayGraphics.fillRect(this.cameraRect.x + 18, y, this.cameraRect.width - 36, 1);
-    }
-    const noiseCount = photoVisible ? 28 : 160;
-    for (let index = 0; index < noiseCount; index += 1) {
-      const x = this.cameraRect.x + 18 + random() * (this.cameraRect.width - 36);
-      const y = this.cameraRect.y + 18 + random() * (this.cameraRect.height - 36);
-      this.camOverlayGraphics.fillStyle(0xffffff, (photoVisible ? 0.018 : 0.05) + random() * 0.06);
-      this.camOverlayGraphics.fillRect(x, y, 1, 1);
-    }
   }
 
   private resolveCaptureTarget(): CaptureTarget | null {
