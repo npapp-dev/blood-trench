@@ -1,6 +1,7 @@
 import {
   ACCELERATION,
   DRAG,
+  DRAG_REFERENCE_HZ,
   HULL_COLLISION_DAMAGE,
   HULL_PRESSURE_DAMAGE_PER_SEC,
   MAX_SPEED,
@@ -25,7 +26,8 @@ function distance(a: Vec2, b: Vec2): number {
 
 export function stepSubmarine(state: SubmarineState, input: ControlInput, dtSec: number): SubmarineState {
   const heading = state.heading + input.turn * TURN_SPEED * dtSec;
-  const speed = clamp(state.speed + input.thrust * ACCELERATION * dtSec, -MAX_SPEED * 0.4, MAX_SPEED) * DRAG;
+  const drag = Math.pow(DRAG, dtSec * DRAG_REFERENCE_HZ);
+  const speed = clamp(state.speed + input.thrust * ACCELERATION * dtSec, -MAX_SPEED * 0.4, MAX_SPEED) * drag;
   const nextX = clamp(state.position.x + Math.cos(heading) * speed * dtSec, 0, WORLD_WIDTH);
   const nextY = clamp(state.position.y + Math.sin(heading) * speed * dtSec, 0, WORLD_HEIGHT);
 

@@ -9,7 +9,9 @@ export const MONSTER_COUNT = 1;
 export const MAX_SPEED = 300;
 export const ACCELERATION = 200;
 export const TURN_SPEED = 1.9;
+// Velocity multiplier per 1/60 sec; raised to (dt * DRAG_REFERENCE_HZ) for frame-rate independence.
 export const DRAG = 0.92;
+export const DRAG_REFERENCE_HZ = 60;
 export const PHOTO_DISTANCE = 120;
 
 export const OXYGEN_DRAIN_BASE = 0.5;
