@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_TITLE, PHOTO_DISTANCE, START_POSITION, WORLD_HEIGHT, WORLD_WIDTH } from '../constants';
-import { allObjectivesComplete, applyCollisionDamage, detectCollision, drainResources, stepSubmarine } from '../logic';
+import { allObjectivesComplete, applyCollisionDamage, computePressure, detectCollision, drainResources, stepSubmarine } from '../logic';
 import type { ControlInput, Hazard, Objective, SubmarineState, Vec2 } from '../types';
 import { createMission } from '../world';
 
@@ -39,7 +39,7 @@ export class MainScene extends Phaser.Scene {
     speed: 0,
     hull: 100,
     oxygen: 100,
-    pressure: 0,
+    pressure: computePressure(START_POSITION.y),
   };
 
   private readonly mapRect = new Phaser.Geom.Rectangle(28, 66, 810, 628);
@@ -57,6 +57,7 @@ export class MainScene extends Phaser.Scene {
   private photoCooldownMs = 0;
   private sonarCooldownMs = 0;
   private creatureRoarCooldownMs = 0;
+  private collisionInvulnMs = 0;
 
   private mapGraphics!: Phaser.GameObjects.Graphics;
   private uiGraphics!: Phaser.GameObjects.Graphics;
@@ -72,6 +73,7 @@ export class MainScene extends Phaser.Scene {
   private overlayText!: Phaser.GameObjects.Text;
   private photoTemplates = new Map<string, PhotoTemplate>();
   private readonly viewBuckets = 8;
+  private mapSpeckle: Array<{ x: number; y: number }> = [];
 
   private keys!: {
     forward: Phaser.Input.Keyboard.Key;
@@ -103,6 +105,7 @@ export class MainScene extends Phaser.Scene {
     this.camOverlayGraphics = this.add.graphics();
 
     this.buildPhotoLibrary();
+    this.buildMapSpeckle();
     this.photoSprite = this.add
       .image(this.cameraRect.centerX, this.cameraRect.centerY, 'photo-unknown')
       .setDisplaySize(this.cameraRect.width - 24, this.cameraRect.height - 24)
@@ -185,6 +188,7 @@ export class MainScene extends Phaser.Scene {
     this.photoCooldownMs = Math.max(0, this.photoCooldownMs - deltaMs);
     this.sonarCooldownMs = Math.max(0, this.sonarCooldownMs - deltaMs);
     this.creatureRoarCooldownMs = Math.max(0, this.creatureRoarCooldownMs - deltaMs);
+    this.collisionInvulnMs = Math.max(0, this.collisionInvulnMs - deltaMs);
 
     if (this.photoDevelopMs > 0) {
       this.photoDevelopMs = Math.max(0, this.photoDevelopMs - deltaMs);
@@ -248,11 +252,9 @@ export class MainScene extends Phaser.Scene {
     this.mapGraphics.fillStyle(0x070203, 1);
     this.mapGraphics.fillRectShape(this.mapRect);
 
-    for (let index = 0; index < 90; index += 1) {
-      const x = this.mapRect.x + Math.random() * this.mapRect.width;
-      const y = this.mapRect.y + Math.random() * this.mapRect.height;
-      this.mapGraphics.fillStyle(0x420d12, 0.18);
-      this.mapGraphics.fillRect(x, y, 2, 2);
+    this.mapGraphics.fillStyle(0x420d12, 0.18);
+    for (const dot of this.mapSpeckle) {
+      this.mapGraphics.fillRect(dot.x, dot.y, 2, 2);
     }
 
     for (const objective of this.objectives) {
@@ -339,6 +341,18 @@ export class MainScene extends Phaser.Scene {
       this.camOverlayGraphics.fillStyle(0xffffff, (photoVisible ? 0.018 : 0.05) + random() * 0.06);
       this.camOverlayGraphics.fillRect(x, y, 1, 1);
     }
+  }
+
+  private buildMapSpeckle(): void {
+    const random = this.seededRandom(0xdec0de);
+    const dots: Array<{ x: number; y: number }> = [];
+    for (let index = 0; index < 90; index += 1) {
+      dots.push({
+        x: this.mapRect.x + random() * this.mapRect.width,
+        y: this.mapRect.y + random() * this.mapRect.height,
+      });
+    }
+    this.mapSpeckle = dots;
   }
 
   private buildPhotoLibrary(): void {
@@ -1240,12 +1254,16 @@ export class MainScene extends Phaser.Scene {
   }
 
   private handleCollisions(): void {
+    if (this.collisionInvulnMs > 0) {
+      return;
+    }
     const collision = detectCollision(this.state, this.hazards);
     if (!collision) {
       return;
     }
 
     this.state = applyCollisionDamage(this.state, collision.id.startsWith('MN-'));
+    this.collisionInvulnMs = 500;
     this.addLog(`Collision with ${collision.kind === 'flesh' ? 'unknown biomass' : 'rock outcrop'}.`);
     if (collision.id.startsWith('MN-') && this.creatureRoarCooldownMs === 0) {
       this.creatureRoarCooldownMs = 9000;
