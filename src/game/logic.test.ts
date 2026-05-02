@@ -23,6 +23,23 @@ describe('stepSubmarine', () => {
     expect(result.position.x).not.toBe(START_POSITION.x);
     expect(result.position.y).not.toBe(START_POSITION.y);
   });
+
+  it('produces near-equivalent steady-state speed across frame rates', () => {
+    function simulate(steps: number, totalSec: number): SubmarineState {
+      let state = baseState();
+      const dt = totalSec / steps;
+      for (let i = 0; i < steps; i += 1) {
+        state = stepSubmarine(state, { thrust: 1, turn: 0 }, dt);
+      }
+      return state;
+    }
+    const at60 = simulate(120, 2);
+    const at30 = simulate(60, 2);
+    const at144 = simulate(288, 2);
+    // Pre-fix this gap was ~2x; with continuous-time drag it is within a few percent.
+    expect(Math.abs(at60.speed - at30.speed) / at60.speed).toBeLessThan(0.1);
+    expect(Math.abs(at60.speed - at144.speed) / at60.speed).toBeLessThan(0.1);
+  });
 });
 
 describe('drainResources', () => {

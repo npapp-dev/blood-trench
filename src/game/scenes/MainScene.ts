@@ -83,12 +83,6 @@ export class MainScene extends Phaser.Scene {
     restart: Phaser.Input.Keyboard.Key;
   };
 
-  private onRestartKeyDown = (): void => {
-    if (this.gameOverMessage) {
-      this.scene.restart();
-    }
-  };
-
   public constructor() {
     super('MainScene');
   }
