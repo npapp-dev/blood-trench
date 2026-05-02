@@ -88,7 +88,6 @@ export class MainScene extends Phaser.Scene {
       sonar: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
       restart: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     };
-
   }
 
   public update(_time: number, deltaMs: number): void {
@@ -303,5 +302,4 @@ export class MainScene extends Phaser.Scene {
       this.hud.addLog('All objectives documented.');
     }
   }
-
 }
