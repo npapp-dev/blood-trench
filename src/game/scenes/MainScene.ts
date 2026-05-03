@@ -191,7 +191,7 @@ export class MainScene extends Phaser.Scene {
       sonar: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
       restart: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     };
-
+    keyboard.on('keydown-R', this.onRestartKeyDown);
   }
 
   public update(_time: number, deltaMs: number): void {
@@ -199,10 +199,6 @@ export class MainScene extends Phaser.Scene {
 
     if (this.gameOverMessage) {
       this.overlayText.setText(`${this.gameOverMessage}\n\nPress R to restart`);
-      if (Phaser.Input.Keyboard.JustDown(this.keys.restart)) {
-        this.scene.restart();
-        return;
-      }
       this.renderUI();
       this.renderMap();
       this.renderCamera();
